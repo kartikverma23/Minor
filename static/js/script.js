@@ -1,10 +1,8 @@
 $(document).ready(function () {
-    // INITILIZATION
     $('.image-section').hide();
     $('.loader').hide();
     $('#result').hide();
 
-    // UPLOAD PREVIEW
     function readURL(input) {
         if (input.files && input.files[0]) {
             var reader = new FileReader();
@@ -16,25 +14,23 @@ $(document).ready(function () {
             reader.readAsDataURL(input.files[0]);
         }
     }
-    $("#imageUpload").change(function () {
+
+    $('#imageUpload').change(function () {
         $('.image-section').show();
         $('#btn-predict').show();
-        $('#result').text('');
-        $('#result').hide();
+        $('#result').text('').hide();
         readURL(this);
     });
 
-    // PREDICT
     $('.upload-label').click(function () {
         $('.webcam').hide();
     });
+
     $('#btn-predict').click(function () {
         var form_data = new FormData($('#upload-file')[0]);
-        // SHOW LOADING ANIMATION
         $(this).hide();
         $('.loader').show();
 
-        // MAKE PREDICTION BY CALLING API /PREDICT
         $.ajax({
             type: 'POST',
             url: '/predict',
@@ -44,18 +40,22 @@ $(document).ready(function () {
             processData: false,
             async: true,
             success: function (predictions) {
-                // GET AND DISPLAY THE RESULT
                 $('#result').fadeIn(600);
                 $('.loader').hide();
-                if (predictions.length === 0) {
-                    $('#result').text(' Result:  ' + 'No Landmarks Detected');
+                if (!predictions || predictions.length === 0) {
+                    $('#result').text('Result: No landmarks detected.');
                 } else {
                     $('.image-section').hide();
-                    $('#result').html('<img src="data:image/png;base64,' + predictions + '"/>');
+                    $('#result').html('<img src="data:image/jpeg;base64,' + predictions + '"/>');
                 }
                 console.log('Success!');
             },
+            error: function (xhr) {
+                $('.loader').hide();
+                $('#btn-predict').show();
+                $('#result').text(xhr.responseText || 'Prediction failed.');
+                $('#result').show();
+            }
         });
     });
 });
-
