@@ -19,7 +19,9 @@ The project focuses on Downward Dog, Plank, Tree, Goddess, and Warrior II. It in
 
 The repository includes a pre-trained `detect_pose.pkl` model so the demo can run after dependencies are installed. The original `Machine Learning Code/coords.csv` currently contains only its header and no training rows. Therefore, the original training workflow cannot be reproduced from the checked-in coordinate dataset alone. Do not present the historical accuracy as a newly re-run benchmark until the training data is restored and the model is retrained.
 
-The serialized model was created with scikit-learn 0.24.2. The runtime requirements use a current scikit-learn range; if the old pickle cannot be loaded in your environment, retrain the classifier from a restored coordinate dataset rather than weakening the dependency checks.
+The serialized model was created with scikit-learn 0.24.2. The web-app requirements pin scikit-learn to 1.2.2 because that release preserves the serialized decision-tree layout; the Flask loader also restores the legacy gradient-boosting loss state. Do not upgrade scikit-learn past 1.2.x without migrating or retraining the model.
+
+The webcam demo uses browser `getUserMedia` camera permission and MediaPipe Pose in the browser, then sends the 33 detected landmarks to Flask for classification about every 700 ms. This works on `localhost` or HTTPS and does not try to access a camera attached to the server. The prediction is a five-class classifier, not a joint-by-joint form or safety assessment. The server also keeps the original image-upload endpoint.
 
 ## Run the web app
 
@@ -34,7 +36,7 @@ python scripts/validate_project.py
 python app.py
 ```
 
-Open `http://127.0.0.1:5000`. The image-upload flow is the most portable. The webcam flow requires camera permissions and a local machine with an accessible camera.
+Open `http://127.0.0.1:5000`. The image-upload flow is the most portable. From the home page, choose **Open Webcam**, click **Start camera**, and allow browser camera access. The live flow requires `localhost` or HTTPS; it no longer depends on `cv2.VideoCapture(0)` on the server.
 
 The app also exposes a lightweight health endpoint at `http://127.0.0.1:5000/health`.
 
