@@ -1,11 +1,134 @@
 {% extends "base.html" %}
 {% block content %}
+<div class="webcam-page">
+    <h1>Live Yoga Pose Demo</h1>
+    <p class="notice">
+        This demo recognizes five trained classes: Down Dog, Goddess, Plank, Tree, and Warrior II.
+        It is educational feedback, not a medical or instructor-grade form assessment.
+    </p>
 
-<!-- VIDEO CAPTURE -->
-<div class="videoCapture">
-    <img src="{{ url_for('video_capture')}}" alt="Web-Cam" width="50%">
+    <div class="camera-grid">
+        <div class="camera-panel">
+            <video id="camera" autoplay playsinline muted hidden></video>
+            <canvas id="pose-canvas" aria-label="Camera preview with pose landmarks"></canvas>
+            <div class="camera-controls">
+                <button id="start-camera" type="button" class="btn btn-primary">Start camera</button>
+                <button id="stop-camera" type="button" class="btn btn-secondary" disabled>Stop camera</button>
+            </div>
+            <p id="camera-status" role="status">Camera is off.</p>
+        </div>
+        <div class="camera-panel result-panel">
+            <div id="pose-result" class="pose-result">No prediction yet.</div>
+            <p id="prediction-note">Stand far enough back for your full body to be visible.</p>
+        </div>
+    </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script>
+(() => {
+    const video = document.getElementById('camera');
+    const canvas = document.getElementById('pose-canvas');
+    const context = canvas.getContext('2d');
+    const startButton = document.getElementById('start-camera');
+    const stopButton = document.getElementById('stop-camera');
+    const status = document.getElementById('camera-status');
+    const result = document.getElementById('pose-result');
+    const note = document.getElementById('prediction-note');
+    let stream = null;
+    let pose = null;
+    let running = false;
+    let lastSentAt = 0;
+    let requestInFlight = false;
 
+    function drawResults(results) {
+        if (!video.videoWidth) return;
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.save();
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+        if (results.poseLandmarks) {
+            drawConnectors(context, results.poseLandmarks, POSE_CONNECTIONS, {color: '#00e676', lineWidth: 3});
+            drawLandmarks(context, results.poseLandmarks, {color: '#ff1744', lineWidth: 1, radius: 3});
+        }
+        context.restore();
+    }
 
+    async function classify(results) {
+        if (!results.poseLandmarks || requestInFlight || Date.now() - lastSentAt < 700) return;
+        requestInFlight = true;
+        lastSentAt = Date.now();
+        const landmarks = results.poseLandmarks.flatMap(point => [point.x, point.y, point.z]);
+        try {
+            const response = await fetch('{{ url_for("predict_landmarks") }}', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({landmarks})
+            });
+            const payload = await response.json();
+            if (!response.ok) throw new Error(payload.error || 'Prediction failed.');
+            result.textContent = `${payload.label} (${payload.confidence}% confidence)`;
+            note.textContent = payload.label === 'Unknown Pose'
+                ? 'No trained pose reached the confidence threshold.'
+                : 'The classifier recognized a pose class; it does not judge safety or exact form.';
+            status.textContent = 'Camera is running.';
+        } catch (error) {
+            status.textContent = error.message;
+        } finally {
+            requestInFlight = false;
+        }
+    }
+
+    async function processFrame() {
+        if (!running || !pose) return;
+        await pose.send({image: video});
+        requestAnimationFrame(processFrame);
+    }
+
+    async function startCamera() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            status.textContent = 'This browser does not provide camera access. Use HTTPS or localhost.';
+            return;
+        }
+        if (typeof Pose === 'undefined') {
+            status.textContent = 'MediaPipe could not load. Check the network connection and reload.';
+            return;
+        }
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({video: {facingMode: 'user'}, audio: false});
+            video.srcObject = stream;
+            await video.play();
+            pose = new Pose({locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+            pose.setOptions({modelComplexity: 1, smoothLandmarks: true, enableSegmentation: false,
+                minDetectionConfidence: 0.5, minTrackingConfidence: 0.5});
+            pose.onResults(results => { drawResults(results); classify(results); });
+            running = true;
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            status.textContent = 'Camera is running.';
+            processFrame();
+        } catch (error) {
+            status.textContent = 'Camera access was not granted: ' + error.message;
+            stopCamera();
+        }
+    }
+
+    function stopCamera() {
+        running = false;
+        if (pose) { pose.close(); pose = null; }
+        if (stream) { stream.getTracks().forEach(track => track.stop()); stream = null; }
+        video.srcObject = null;
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        status.textContent = 'Camera is off.';
+    }
+
+    startButton.addEventListener('click', startCamera);
+    stopButton.addEventListener('click', stopCamera);
+    window.addEventListener('beforeunload', stopCamera);
+})();
+</script>
 {% endblock %}
